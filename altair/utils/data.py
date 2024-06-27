@@ -1,4 +1,6 @@
 from __future__ import annotations
+from functools import partial
+import narwhals as nw
 import json
 import random
 import hashlib
@@ -58,7 +60,7 @@ SampleReturnType = Optional[Union[pd.DataFrame, Dict[str, Sequence], "pa.lib.Tab
 
 
 def is_data_type(obj: Any) -> TypeIs[DataType]:
-    return isinstance(obj, (dict, pd.DataFrame, DataFrameLike, SupportsGeoInterface))
+    return isinstance(obj, (dict, pd.DataFrame, DataFrameLike, SupportsGeoInterface, nw.DataFrame))
 
 
 # ==============================================================================
@@ -134,20 +136,16 @@ def limit_rows(
             values = data.__geo_interface__["features"]
         else:
             values = data.__geo_interface__
-    elif isinstance(data, pd.DataFrame):
-        values = data
     elif isinstance(data, dict):
         if "values" in data:
             values = data["values"]
         else:
             return data
-    elif isinstance(data, DataFrameLike):
-        pa_table = arrow_table_from_dfi_dataframe(data)
-        if max_rows is not None and pa_table.num_rows > max_rows:
-            raise_max_rows_error()
-        # Return pyarrow Table instead of input since the
-        # `arrow_table_from_dfi_dataframe` call above may be expensive
-        return pa_table
+    elif isinstance(data, pd.DataFrame):
+        values = data
+    elif isinstance(df_nw := nw.from_native(data, eager_only=True, strict=False), nw.DataFrame):
+        data = df_nw
+        values = df_nw
 
     if max_rows is not None and len(values) > max_rows:
         raise_max_rows_error()
@@ -317,6 +315,16 @@ def to_values(data: DataType) -> ToValuesReturnType:
         # SupportGeoInterface and then the ignore statement is not needed?
         data_sanitized = sanitize_geo_interface(data.__geo_interface__)  # type: ignore[arg-type]
         return {"values": data_sanitized}
+    elif isinstance(data, nw.DataFrame):
+        schema = data.schema
+        # todo: check what pyarrow does for finer time units / time zones
+        data = data.with_columns(
+            nw.col(name).dt.to_string('%Y-%m-%d') if dtype == nw.Date else
+            nw.col(name).dt.to_string('%Y-%m-%dT%H:%M:%S') if dtype == nw.Datetime else
+            name
+            for name, dtype in schema.items()
+        )
+        return {"values": list(data.iter_rows(named=True))}
     elif isinstance(data, pd.DataFrame):
         data = sanitize_dataframe(data)
         return {"values": data.to_dict(orient="records")}

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, MutableMapping
 from copy import deepcopy
+import narwhals as nw
 import json
 import itertools
 import re
@@ -598,35 +599,15 @@ def parse_shorthand(
 
     # if data is specified and type is not, infer type from data
     if "type" not in attrs:
-        if pyarrow_available() and data is not None and isinstance(data, DataFrameLike):
-            dfi = data.__dataframe__()
-            if "field" in attrs:
-                unescaped_field = attrs["field"].replace("\\", "")
-                if unescaped_field in dfi.column_names():
-                    column = dfi.get_column_by_name(unescaped_field)
-                    try:
-                        attrs["type"] = infer_vegalite_type_for_dfi_column(column)
-                    except (NotImplementedError, AttributeError, ValueError):
-                        # Fall back to pandas-based inference.
-                        # Note: The AttributeError catch is a workaround for
-                        # https://github.com/pandas-dev/pandas/issues/55332
-                        if isinstance(data, pd.DataFrame):
-                            attrs["type"] = infer_vegalite_type(data[unescaped_field])
-                        else:
-                            raise
-
-                    if isinstance(attrs["type"], tuple):
-                        attrs["sort"] = attrs["type"][1]
-                        attrs["type"] = attrs["type"][0]
-        elif isinstance(data, pd.DataFrame):
-            # Fallback if pyarrow is not installed or if pandas is older than 1.5
-            #
-            # Remove escape sequences so that types can be inferred for columns with special characters
-            if "field" in attrs and attrs["field"].replace("\\", "") in data.columns:
-                attrs["type"] = infer_vegalite_type(
-                    data[attrs["field"].replace("\\", "")]
-                )
-                # ordered categorical dataframe columns return the type and sort order as a tuple
+        if "field" in attrs and data is not None:
+            data_nw = nw.from_native(data, eager_only=True, strict=False)
+            unescaped_field = attrs["field"].replace("\\", "")
+            if isinstance(data_nw, nw.DataFrame) and unescaped_field in data_nw.columns:
+                column = data_nw[unescaped_field]
+                if column.dtype == nw.Object and (pandas := sys.modules.get('pandas')) is not None and isinstance(data, pandas.DataFrame):
+                    attrs["type"] = infer_vegalite_type(nw.to_native(column))
+                else:
+                    attrs["type"] = infer_vegalite_type_for_nw_column(column)
                 if isinstance(attrs["type"], tuple):
                     attrs["sort"] = attrs["type"][1]
                     attrs["type"] = attrs["type"][0]
@@ -649,44 +630,22 @@ def parse_shorthand(
         )
     return attrs
 
-
-def infer_vegalite_type_for_dfi_column(
-    column: Column | PandasColumn,
-) -> InferredVegaLiteType | tuple[InferredVegaLiteType, list[Any]]:
-    from pyarrow.interchange.from_dataframe import column_to_array
-
-    try:
-        kind = column.dtype[0]
-    except NotImplementedError as e:
-        # Edge case hack:
-        # dtype access fails for pandas column with datetime64[ns, UTC] type,
-        # but all we need to know is that its temporal, so check the
-        # error message for the presence of datetime64.
-        #
-        # See https://github.com/pandas-dev/pandas/issues/54239
-        if "datetime64" in e.args[0] or "timestamp" in e.args[0]:
-            return "temporal"
-        raise e
-
-    if (
-        kind == DtypeKind.CATEGORICAL
-        and column.describe_categorical["is_ordered"]
-        and column.describe_categorical["categories"] is not None
-    ):
+def infer_vegalite_type_for_nw_column(
+    column: Union[Column, "PandasColumn"],
+) -> Union[InferredVegaLiteType, Tuple[InferredVegaLiteType, list]]:
+    dtype = column.dtype
+    if dtype == nw.Categorical:
+        # todo: handle ordered vs non-ordered case
         # Treat ordered categorical column as Vega-Lite ordinal
-        categories_column = column.describe_categorical["categories"]
-        categories_array = column_to_array(categories_column)
-        return "ordinal", categories_array.to_pylist()
-    if kind in {DtypeKind.STRING, DtypeKind.CATEGORICAL, DtypeKind.BOOL}:
+        return "ordinal", column.cat.get_categories().to_list()
+    if dtype in (nw.String, nw.Categorical, nw.Boolean):
         return "nominal"
-    elif kind in {DtypeKind.INT, DtypeKind.UINT, DtypeKind.FLOAT}:
+    elif dtype.is_numeric():
         return "quantitative"
-    elif kind == DtypeKind.DATETIME:
+    elif dtype in (nw.Datetime, nw.Date):
         return "temporal"
     else:
-        msg = f"Unexpected DtypeKind: {kind}"
-        raise ValueError(msg)
-
+        raise ValueError(f"Unexpected DtypeKind: {kind}")
 
 def use_signature(Obj: Callable[P, Any]):  # -> Callable[..., Callable[P, V]]:
     """Apply call signature and documentation of Obj to the decorated method"""
