@@ -43,9 +43,8 @@ else:
 if TYPE_CHECKING:
     from types import ModuleType
     import typing as t
-    from pandas.core.interchange.dataframe_protocol import Column as PandasColumn
     import pyarrow as pa
-    from altair.utils._dfi_types import Column, DataFrame as DfiDataFrame
+    from altair.utils._dfi_types import DataFrame as DfiDataFrame
 
 V = TypeVar("V")
 P = ParamSpec("P")
@@ -644,7 +643,7 @@ def parse_shorthand(
 
 
 def infer_vegalite_type_for_nw_column(
-    column: Column | PandasColumn,
+    column: nw.Series,
 ) -> InferredVegaLiteType | tuple[InferredVegaLiteType, list]:
     dtype = column.dtype
     if dtype == nw.Categorical:
