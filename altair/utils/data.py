@@ -1,5 +1,4 @@
 from __future__ import annotations
-from functools import partial
 import narwhals as nw
 import json
 import random
@@ -20,7 +19,7 @@ from typing import (
     overload,
     runtime_checkable,
 )
-from .core import maybe_convert
+from .core import maybe_convert, DataFrameLike
 from typing_extensions import TypeAlias
 from pathlib import Path
 from functools import partial
@@ -47,9 +46,7 @@ class SupportsGeoInterface(Protocol):
     __geo_interface__: MutableMapping
 
 
-DataType: TypeAlias = Union[
-    Dict[Any, Any], pd.DataFrame, SupportsGeoInterface
-]
+DataType: TypeAlias = Union[Dict[Any, Any], pd.DataFrame, SupportsGeoInterface]
 
 TDataType = TypeVar("TDataType", bound=DataType)
 
@@ -61,7 +58,7 @@ SampleReturnType = Optional[Union[pd.DataFrame, Dict[str, Sequence], "pa.lib.Tab
 
 
 def is_data_type(obj: Any) -> TypeIs[DataType]:
-    if isinstance(df := nw.from_native(obj, eager_only=True, strict=False), nw.DataFrame):
+    if isinstance(nw.from_native(obj, eager_only=True, strict=False), nw.DataFrame):
         return True
     return isinstance(obj, (dict, pd.DataFrame, SupportsGeoInterface, nw.DataFrame))
 
@@ -133,6 +130,7 @@ def limit_rows(
             "on how to plot large datasets."
         )
         raise MaxRowsError(msg)
+
     data = maybe_convert(data)
     if isinstance(data, SupportsGeoInterface):
         if data.__geo_interface__["type"] == "FeatureCollection":
@@ -322,15 +320,18 @@ def to_values(data: DataType) -> ToValuesReturnType:
         data = sanitize_dataframe(data)
         return {"values": data.to_dict(orient="records")}
     elif isinstance(data, nw.DataFrame):
-        if (pa := sys.modules.get('pyarrow')) is not None and isinstance(nw.to_native(data), pa.Table):
+        if (pa := sys.modules.get("pyarrow")) is not None and isinstance(
+            nw.to_native(data), pa.Table
+        ):
             # temporary hack
             pa_table = sanitize_arrow_table(arrow_table_from_dfi_dataframe(data))
             return {"values": pa_table.to_pylist()}
         schema = data.schema
         # todo: check what pyarrow does for finer time units / time zones
         data = data.with_columns(
-            nw.col(name).dt.to_string('%Y-%m-%dT%H:%M:%S') if dtype in (nw.Datetime, nw.Date) else
-            name
+            nw.col(name).dt.to_string("%Y-%m-%dT%H:%M:%S")
+            if dtype in {nw.Datetime, nw.Date}
+            else name
             for name, dtype in schema.items()
         )
         return {"values": list(data.iter_rows(named=True))}

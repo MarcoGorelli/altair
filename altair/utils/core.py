@@ -33,7 +33,6 @@ import numpy as np
 from pandas.api.types import infer_dtype
 
 from altair.utils.schemapi import SchemaBase, Undefined
-from altair.utils._dfi_types import Column, DtypeKind, DataFrame as DfiDataFrame
 
 if sys.version_info >= (3, 10):
     from typing import ParamSpec
@@ -46,6 +45,7 @@ if TYPE_CHECKING:
     import typing as t
     from pandas.core.interchange.dataframe_protocol import Column as PandasColumn
     import pyarrow as pa
+    from altair.utils._dfi_types import Column, DataFrame as DfiDataFrame
 
 V = TypeVar("V")
 P = ParamSpec("P")
@@ -429,6 +429,7 @@ def sanitize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
             df[col_name] = col.where(col.notnull(), None)
     return df
 
+
 def sanitize_arrow_table(pa_table: pa.Table) -> pa.Table:
     """Sanitize arrow table for JSON serialization"""
     import pyarrow as pa
@@ -454,13 +455,14 @@ def sanitize_arrow_table(pa_table: pa.Table) -> pa.Table:
 
     return pa.Table.from_arrays(arrays, names=schema.names)
 
+
 def maybe_convert(data):
-    if (pd := sys.modules.get('pandas')) is not None and isinstance(data, pd.DataFrame):
+    if (pd := sys.modules.get("pandas")) is not None and isinstance(data, pd.DataFrame):
         return data
     data = nw.from_native(data, eager_only=True, strict=False)
     if isinstance(data, nw.DataFrame):
         return data
-    if hasattr(data, 'to_arrow'):
+    if hasattr(data, "to_arrow"):
         return nw.from_native(data.to_arrow(), eager_only=True, strict=False)
 
 
@@ -546,8 +548,6 @@ def parse_shorthand(
     >>> parse_shorthand('count()', data) == {'aggregate': 'count', 'type': 'quantitative'}
     True
     """
-    from altair.utils._importers import pyarrow_available
-
     if not shorthand:
         return {}
 
@@ -606,19 +606,22 @@ def parse_shorthand(
         attrs["type"] = "temporal"
 
     # if data is specified and type is not, infer type from data
-    if "type" not in attrs:
-        if "field" in attrs and data is not None:
-            data_nw = nw.from_native(data, eager_only=True, strict=False)
-            unescaped_field = attrs["field"].replace("\\", "")
-            if isinstance(data_nw, nw.DataFrame) and unescaped_field in data_nw.columns:
-                column = data_nw[unescaped_field]
-                if column.dtype == nw.Object and (pandas := sys.modules.get('pandas')) is not None and isinstance(data, pandas.DataFrame):
-                    attrs["type"] = infer_vegalite_type(nw.to_native(column))
-                else:
-                    attrs["type"] = infer_vegalite_type_for_nw_column(column)
-                if isinstance(attrs["type"], tuple):
-                    attrs["sort"] = attrs["type"][1]
-                    attrs["type"] = attrs["type"][0]
+    if "type" not in attrs and "field" in attrs and data is not None:
+        data_nw = nw.from_native(data, eager_only=True, strict=False)
+        unescaped_field = attrs["field"].replace("\\", "")
+        if isinstance(data_nw, nw.DataFrame) and unescaped_field in data_nw.columns:
+            column = data_nw[unescaped_field]
+            if (
+                column.dtype == nw.Object
+                and (pandas := sys.modules.get("pandas")) is not None
+                and isinstance(data, pandas.DataFrame)
+            ):
+                attrs["type"] = infer_vegalite_type(nw.to_native(column))
+            else:
+                attrs["type"] = infer_vegalite_type_for_nw_column(column)
+            if isinstance(attrs["type"], tuple):
+                attrs["sort"] = attrs["type"][1]
+                attrs["type"] = attrs["type"][0]
 
     # If an unescaped colon is still present, it's often due to an incorrect data type specification
     # but could also be due to using a column name with ":" in it.
@@ -638,22 +641,25 @@ def parse_shorthand(
         )
     return attrs
 
+
 def infer_vegalite_type_for_nw_column(
-    column: Union[Column, "PandasColumn"],
-) -> Union[InferredVegaLiteType, Tuple[InferredVegaLiteType, list]]:
+    column: Column | PandasColumn,
+) -> InferredVegaLiteType | tuple[InferredVegaLiteType, list]:
     dtype = column.dtype
     if dtype == nw.Categorical:
         # todo: handle ordered vs non-ordered case
         # Treat ordered categorical column as Vega-Lite ordinal
         return "ordinal", column.cat.get_categories().to_list()
-    if dtype in (nw.String, nw.Categorical, nw.Boolean):
+    if dtype in {nw.String, nw.Categorical, nw.Boolean}:
         return "nominal"
     elif dtype.is_numeric():
         return "quantitative"
-    elif dtype in (nw.Datetime, nw.Date):
+    elif dtype in {nw.Datetime, nw.Date}:
         return "temporal"
     else:
-        raise ValueError(f"Unexpected DtypeKind: {kind}")
+        msg = f"Unexpected DtypeKind: {dtype}"
+        raise ValueError(msg)
+
 
 def use_signature(Obj: Callable[P, Any]):  # -> Callable[..., Callable[P, V]]:
     """Apply call signature and documentation of Obj to the decorated method"""
