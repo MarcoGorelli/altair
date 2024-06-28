@@ -24,7 +24,7 @@ dependencies = [
     "pandas>=1.1.5",
     "packaging",
     # For cross-dataframe compatibility
-    "narwhals>=0.9.18"
+    "narwhals>=0.9.17"
 ]
 description = "Vega-Altair: A declarative statistical visualization library for Python."
 readme = "README.md"

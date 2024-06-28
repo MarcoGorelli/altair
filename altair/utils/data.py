@@ -20,6 +20,7 @@ from typing import (
     overload,
     runtime_checkable,
 )
+from .core import maybe_convert
 from typing_extensions import TypeAlias
 from pathlib import Path
 from functools import partial
@@ -28,7 +29,7 @@ import sys
 import pandas as pd
 
 from ._importers import import_pyarrow_interchange
-from .core import sanitize_dataframe
+from .core import sanitize_dataframe, sanitize_arrow_table
 from .core import sanitize_geo_interface
 from .plugin_registry import PluginRegistry
 
@@ -132,7 +133,7 @@ def limit_rows(
             "on how to plot large datasets."
         )
         raise MaxRowsError(msg)
-
+    data = maybe_convert(data)
     if isinstance(data, SupportsGeoInterface):
         if data.__geo_interface__["type"] == "FeatureCollection":
             values = data.__geo_interface__["features"]
@@ -145,9 +146,8 @@ def limit_rows(
             values = data["values"]
         else:
             return data
-    elif isinstance(df_nw := nw.from_native(data, eager_only=True, strict=False), nw.DataFrame):
-        data = df_nw
-        values = df_nw
+    elif isinstance(data, nw.DataFrame):
+        values = data
 
     if max_rows is not None and len(values) > max_rows:
         raise_max_rows_error()
@@ -309,6 +309,7 @@ def _to_text_kwds(prefix: str, extension: str, filename: str, urlpath: str, /) -
 
 def to_values(data: DataType) -> ToValuesReturnType:
     """Replace a DataFrame by a data model with values."""
+    data = maybe_convert(data)
     check_data_type(data)
     if isinstance(data, SupportsGeoInterface):
         if isinstance(data, pd.DataFrame):
@@ -317,7 +318,14 @@ def to_values(data: DataType) -> ToValuesReturnType:
         # SupportGeoInterface and then the ignore statement is not needed?
         data_sanitized = sanitize_geo_interface(data.__geo_interface__)  # type: ignore[arg-type]
         return {"values": data_sanitized}
+    elif isinstance(data, pd.DataFrame):
+        data = sanitize_dataframe(data)
+        return {"values": data.to_dict(orient="records")}
     elif isinstance(data, nw.DataFrame):
+        if (pa := sys.modules.get('pyarrow')) is not None and isinstance(nw.to_native(data), pa.Table):
+            # temporary hack
+            pa_table = sanitize_arrow_table(arrow_table_from_dfi_dataframe(data))
+            return {"values": pa_table.to_pylist()}
         schema = data.schema
         # todo: check what pyarrow does for finer time units / time zones
         data = data.with_columns(
@@ -327,9 +335,6 @@ def to_values(data: DataType) -> ToValuesReturnType:
             for name, dtype in schema.items()
         )
         return {"values": list(data.iter_rows(named=True))}
-    elif isinstance(data, pd.DataFrame):
-        data = sanitize_dataframe(data)
-        return {"values": data.to_dict(orient="records")}
     elif isinstance(data, dict):
         if "values" not in data:
             msg = "values expected in data dict, but not present."
