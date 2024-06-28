@@ -322,7 +322,9 @@ def to_values(data: DataType) -> ToValuesReturnType:
             nw.to_native(data), pa.Table
         ):
             # temporary hack
-            pa_table = sanitize_arrow_table(arrow_table_from_dfi_dataframe(nw.to_native(data)))
+            pa_table = sanitize_arrow_table(
+                arrow_table_from_dfi_dataframe(nw.to_native(data))
+            )
             return {"values": pa_table.to_pylist()}
         schema = data.schema
         # todo: check what pyarrow does for finer time units / time zones
