@@ -464,6 +464,7 @@ def maybe_convert(data):
         return data
     if hasattr(data, "to_arrow"):
         return nw.from_native(data.to_arrow(), eager_only=True, strict=False)
+    return data
 
 
 def parse_shorthand(
@@ -650,11 +651,11 @@ def infer_vegalite_type_for_nw_column(
         # todo: handle ordered vs non-ordered case
         # Treat ordered categorical column as Vega-Lite ordinal
         return "ordinal", column.cat.get_categories().to_list()
-    if dtype in {nw.String, nw.Categorical, nw.Boolean}:
+    if dtype in (nw.String, nw.Categorical, nw.Boolean):
         return "nominal"
     elif dtype.is_numeric():
         return "quantitative"
-    elif dtype in {nw.Datetime, nw.Date}:
+    elif dtype in (nw.Datetime, nw.Date):
         return "temporal"
     else:
         msg = f"Unexpected DtypeKind: {dtype}"
