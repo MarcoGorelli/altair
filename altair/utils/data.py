@@ -60,6 +60,8 @@ SampleReturnType = Optional[Union[pd.DataFrame, Dict[str, Sequence], "pa.lib.Tab
 
 
 def is_data_type(obj: Any) -> TypeIs[DataType]:
+    if isinstance(df := nw.from_native(obj, eager_only=True, strict=False), nw.DataFrame):
+        return True
     return isinstance(obj, (dict, pd.DataFrame, SupportsGeoInterface, nw.DataFrame))
 
 
