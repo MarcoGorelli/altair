@@ -329,8 +329,7 @@ def to_values(data: DataType) -> ToValuesReturnType:
         schema = data.schema
         # todo: check what pyarrow does for finer time units / time zones
         data = data.with_columns(
-            nw.col(name).dt.to_string('%Y-%m-%d') if dtype == nw.Date else
-            nw.col(name).dt.to_string('%Y-%m-%dT%H:%M:%S') if dtype == nw.Datetime else
+            nw.col(name).dt.to_string('%Y-%m-%dT%H:%M:%S') if dtype in (nw.Datetime, nw.Date) else
             name
             for name, dtype in schema.items()
         )
