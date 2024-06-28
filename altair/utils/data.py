@@ -28,7 +28,7 @@ import sys
 import pandas as pd
 
 from ._importers import import_pyarrow_interchange
-from .core import sanitize_dataframe, sanitize_arrow_table, DataFrameLike
+from .core import sanitize_dataframe
 from .core import sanitize_geo_interface
 from .plugin_registry import PluginRegistry
 
@@ -47,7 +47,7 @@ class SupportsGeoInterface(Protocol):
 
 
 DataType: TypeAlias = Union[
-    Dict[Any, Any], pd.DataFrame, SupportsGeoInterface, DataFrameLike
+    Dict[Any, Any], pd.DataFrame, SupportsGeoInterface
 ]
 
 TDataType = TypeVar("TDataType", bound=DataType)
@@ -60,7 +60,7 @@ SampleReturnType = Optional[Union[pd.DataFrame, Dict[str, Sequence], "pa.lib.Tab
 
 
 def is_data_type(obj: Any) -> TypeIs[DataType]:
-    return isinstance(obj, (dict, pd.DataFrame, DataFrameLike, SupportsGeoInterface, nw.DataFrame))
+    return isinstance(obj, (dict, pd.DataFrame, SupportsGeoInterface, nw.DataFrame))
 
 
 # ==============================================================================
@@ -136,13 +136,13 @@ def limit_rows(
             values = data.__geo_interface__["features"]
         else:
             values = data.__geo_interface__
+    elif isinstance(data, pd.DataFrame):
+        values = data
     elif isinstance(data, dict):
         if "values" in data:
             values = data["values"]
         else:
             return data
-    elif isinstance(data, pd.DataFrame):
-        values = data
     elif isinstance(df_nw := nw.from_native(data, eager_only=True, strict=False), nw.DataFrame):
         data = df_nw
         values = df_nw
@@ -333,9 +333,6 @@ def to_values(data: DataType) -> ToValuesReturnType:
             msg = "values expected in data dict, but not present."
             raise KeyError(msg)
         return data
-    elif isinstance(data, DataFrameLike):
-        pa_table = sanitize_arrow_table(arrow_table_from_dfi_dataframe(data))
-        return {"values": pa_table.to_pylist()}
     else:
         # Should never reach this state as tested by check_data_type
         msg = f"Unrecognized data type: {type(data)}"
