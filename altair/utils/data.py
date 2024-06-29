@@ -318,19 +318,12 @@ def to_values(data: DataType) -> ToValuesReturnType:
         data = sanitize_dataframe(data)
         return {"values": data.to_dict(orient="records")}
     elif isinstance(data, nw.DataFrame):
-        if (pa := sys.modules.get("pyarrow")) is not None and isinstance(
-            nw.to_native(data), pa.Table
-        ):
-            # temporary hack
-            pa_table = sanitize_arrow_table(
-                arrow_table_from_dfi_dataframe(nw.to_native(data))
-            )
-            return {"values": pa_table.to_pylist()}
         schema = data.schema
-        # todo: check what pyarrow does for finer time units / time zones
         data = data.with_columns(
             nw.col(name).dt.to_string("%Y-%m-%dT%H:%M:%S")
-            if dtype in {nw.Datetime, nw.Date}
+            if dtype == nw.Datetime
+            else nw.col(name).dt.to_string("%Y-%m-%d")
+            if dtype == nw.Date
             else name
             for name, dtype in schema.items()
         )
