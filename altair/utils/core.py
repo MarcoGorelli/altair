@@ -529,7 +529,8 @@ def parse_shorthand(  # noqa: C901
         The shorthand representation to be parsed
     data : DataFrame, optional
         If specified and of type DataFrame, then use these values to infer the
-        column type if not provided by the shorthand.
+        column type if not provided by the shorthand. If specified and of
+        any other type, it is ignored.
     parse_aggregates : boolean
         If True (default), then parse aggregate functions within the shorthand.
     parse_window_ops : boolean
